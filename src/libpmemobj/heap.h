@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Intel Corporation
+ * Copyright (c) 2015-2016, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,9 +34,24 @@
  * heap.h -- internal definitions for heap
  */
 
-#define	MAX_BUCKETS 6
-#define	DEFAULT_BUCKET 5
-#define	RUN_UNIT_MAX 4U
+#define	MAX_BUCKETS UINT8_MAX
+#define	RUN_UNIT_MAX 8U
+
+/*
+ * Every allocation has to be a multiple of a cacheline because we need to
+ * ensure proper alignment of every pmem structure.
+ */
+#define	ALLOC_BLOCK_SIZE _POBJ_CL_ALIGNMENT
+
+/*
+ * Converts size (in bytes) to number of allocation blocks.
+ */
+#define	SIZE_TO_ALLOC_BLOCKS(_s) (1 + (((_s) - 1) / ALLOC_BLOCK_SIZE))
+
+/*
+ * Converts size (in bytes) to bucket index.
+ */
+#define	SIZE_TO_BID(_h, _s) ((_h)->bucket_map[SIZE_TO_ALLOC_BLOCKS(_s)])
 
 enum heap_op {
 	HEAP_OP_ALLOC,
@@ -67,17 +82,17 @@ struct memory_block heap_coalesce(PMEMobjpool *pop,
 	struct memory_block *blocks[], int n, enum heap_op op,
 	void **hdr, uint64_t *op_result);
 
-int heap_get_adjacent_free_block(PMEMobjpool *pop, struct memory_block *m,
-	struct memory_block cnt, int prev);
+int heap_get_adjacent_free_block(PMEMobjpool *pop, struct bucket *b,
+	struct memory_block *m, struct memory_block cnt, int prev);
 
-int heap_lock_if_run(PMEMobjpool *pop, struct memory_block m);
-int heap_unlock_if_run(PMEMobjpool *pop, struct memory_block m);
+void heap_lock_if_run(PMEMobjpool *pop, struct memory_block m);
+void heap_unlock_if_run(PMEMobjpool *pop, struct memory_block m);
 
 int heap_get_bestfit_block(PMEMobjpool *pop, struct bucket *b,
 	struct memory_block *m);
 int heap_get_exact_block(PMEMobjpool *pop, struct bucket *b,
 	struct memory_block *m, uint32_t new_size_idx);
-int heap_degrade_run_if_empty(PMEMobjpool *pop, struct bucket *b,
+void heap_degrade_run_if_empty(PMEMobjpool *pop, struct bucket *b,
 	struct memory_block m);
 
 struct memory_block heap_free_block(PMEMobjpool *pop, struct bucket *b,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Intel Corporation
+ * Copyright (c) 2015-2016, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -147,14 +147,13 @@ test_realloc(size_t org, size_t dest)
 	err = prealloc(mock_pop, &addr->ptr, dest, 0);
 	ASSERTeq(err, 0);
 	ASSERT(pmalloc_usable_size(mock_pop, addr->ptr) >= dest);
-	err = pfree(mock_pop, &addr->ptr, 0);
-	ASSERTeq(err, 0);
+	pfree(mock_pop, &addr->ptr, 0);
 }
 
 static void
 test_mock_pool_allocs()
 {
-	addr = MALLOC(MOCK_POOL_SIZE);
+	addr = ZALLOC(MOCK_POOL_SIZE);
 	mock_pop = &addr->p;
 	mock_pop->addr = addr;
 	mock_pop->size = MOCK_POOL_SIZE;

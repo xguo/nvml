@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2014-2015, Intel Corporation
+# Copyright (c) 2014-2016, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -33,14 +33,13 @@
 #
 # src/benchmarks/Makefile -- build all benchmarks
 #
-OBJCOPY=objcopy
+TOP := $(dir $(lastword $(MAKEFILE_LIST)))../..
+include $(TOP)/src/common.inc
 
 vpath %.c ../examples/libpmemobj/tree_map
 vpath %.c ../examples/libpmemobj/map
 vpath %.c ../examples/libpmemobj/hashmap
 
-TOP := $(dir $(lastword $(MAKEFILE_LIST)))/../..
-include $(TOP)/src/common.inc
 
 vpath %.c ../libpmemobj
 vpath %.c ../common
@@ -71,7 +70,8 @@ SRC=pmembench.c\
     obj_locks.c\
     obj_lanes.c\
     map_bench.c\
-    pmemobj_tx.c
+    pmemobj_tx.c\
+    pmemobj_atomic_lists.c
 
 # Configuration file without the .cfg extension
 CONFIGS=pmembench_log\
@@ -84,7 +84,8 @@ CONFIGS=pmembench_log\
 	pmembench_obj_locks\
 	pmembench_obj_lanes\
 	pmembench_map\
-	pmembench_tx
+	pmembench_tx\
+	pmembench_atomic_lists
 
 OBJS=$(SRC:.c=.o)
 LDFLAGS = -L$(LIBS_PATH)
@@ -132,8 +133,12 @@ default: $(TARGET)
 no-glib:
 	@echo "glib-2.0 development package required"
 
+objdir=.
+
 %.o: %.c
-	$(CC) -c $(CFLAGS) $< -o $@
+	@mkdir -p .deps
+	$(CC) -MD -c -o $@ $(CFLAGS) $<
+	$(create-deps)
 
 $(BENCHMARK): $(OBJS) $(LIBMAP)
 	$(CC) -o $@ $(LDFLAGS) $^ $(LIBS)
@@ -148,6 +153,7 @@ clean:
 clobber: clean
 	$(RM) $(BENCHMARK)
 	$(RM) *.csv
+	$(RM) -r .deps
 
 cstyle:
 	$(CSTYLE) *.[ch]
@@ -163,3 +169,5 @@ PMEMOBJ_SYMBOLS=pmalloc pfree lane_hold lane_release
 
 pmemobj.o: $(LIBS_PATH)/libpmemobj/libpmemobj_unscoped.o
 	objcopy --localize-hidden $(addprefix -G, $(PMEMOBJ_SYMBOLS)) $< $@
+
+-include .deps/*.P

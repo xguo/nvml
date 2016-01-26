@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Intel Corporation
+ * Copyright (c) 2015-2016, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -62,14 +62,6 @@ FUNC_MOCK(malloc, void *, size_t size)
 	}
 FUNC_MOCK_END
 
-FUNC_MOCK(pthread_mutex_init, int,
-	pthread_mutex_t *mutex, const pthread_mutexattr_t *attr)
-	FUNC_MOCK_RUN_RET_DEFAULT_REAL(pthread_mutex_init, mutex, attr)
-	FUNC_MOCK_RUN(0) {
-		return -1;
-	}
-FUNC_MOCK_END
-
 FUNC_MOCK(ctree_new, struct ctree *, void)
 	FUNC_MOCK_RUN_RET_DEFAULT(MOCK_CRIT)
 	FUNC_MOCK_RUN(0) {
@@ -103,19 +95,15 @@ test_new_delete_bucket()
 	struct bucket *b = NULL;
 
 	/* b malloc fail */
-	b = bucket_new(1, 1);
+	b = bucket_new(1, BUCKET_HUGE, CONTAINER_CTREE, 1, 1);
 	ASSERT(b == NULL);
 
 	/* b->ctree fail */
-	b = bucket_new(1, 1);
-	ASSERT(b == NULL);
-
-	/* b->lock init fail */
-	b = bucket_new(1, 1);
+	b = bucket_new(2, BUCKET_HUGE, CONTAINER_CTREE, 1, 1);
 	ASSERT(b == NULL);
 
 	/* all ok */
-	b = bucket_new(1, 1);
+	b = bucket_new(4, BUCKET_HUGE, CONTAINER_CTREE, 1, 1);
 	ASSERT(b != NULL);
 
 	bucket_delete(b);
@@ -124,14 +112,16 @@ test_new_delete_bucket()
 static void
 test_bucket_bitmap_correctness()
 {
-	struct bucket *b = bucket_new((RUNSIZE / 10), TEST_MAX_UNIT);
+	struct bucket *b = bucket_new(1, BUCKET_RUN, CONTAINER_CTREE,
+		(RUNSIZE / 10), TEST_MAX_UNIT);
 	ASSERT(b != NULL);
 
 	/* 54 set (not available for allocations), and 10 clear (available) */
 	uint64_t bitmap_lastval =
 	0b1111111111111111111111111111111111111111111111111111110000000000;
 
-	ASSERTeq(bucket_bitmap_lastval(b), bitmap_lastval);
+	struct bucket_run *r = (struct bucket_run *)b;
+	ASSERTeq(r->bitmap_lastval, bitmap_lastval);
 
 	bucket_delete(b);
 }
@@ -139,14 +129,13 @@ test_bucket_bitmap_correctness()
 static void
 test_bucket()
 {
-	struct bucket *b = bucket_new(TEST_UNIT_SIZE, TEST_MAX_UNIT);
+	struct bucket *b = bucket_new(1, BUCKET_HUGE, CONTAINER_CTREE,
+		TEST_UNIT_SIZE, TEST_MAX_UNIT);
 	ASSERT(b != NULL);
 
-	ASSERT(bucket_unit_size(b) == TEST_UNIT_SIZE);
-	ASSERT(bucket_is_small(b));
-	ASSERT(bucket_calc_units(b, TEST_SIZE) == TEST_SIZE_UNITS);
-	ASSERT(bucket_lock(b) == 0);
-	bucket_unlock(b);
+	ASSERT(b->unit_size == TEST_UNIT_SIZE);
+	ASSERT(b->type == BUCKET_HUGE);
+	ASSERT(b->calc_units(b, TEST_SIZE) == TEST_SIZE_UNITS);
 
 	bucket_delete(b);
 }
@@ -154,18 +143,19 @@ test_bucket()
 static void
 test_bucket_insert_get()
 {
-	struct bucket *b = bucket_new(TEST_UNIT_SIZE, TEST_MAX_UNIT);
+	struct bucket *b = bucket_new(1, BUCKET_RUN, CONTAINER_CTREE,
+		TEST_UNIT_SIZE, TEST_MAX_UNIT);
 	ASSERT(b != NULL);
 
 	struct memory_block m = {TEST_CHUNK_ID, TEST_ZONE_ID,
 		TEST_SIZE_IDX, TEST_BLOCK_OFF};
 
 	/* get from empty */
-	ASSERT(bucket_get_rm_block_bestfit(b, &m) != 0);
+	ASSERT(CNT_OP(b, get_rm_bestfit, &m) != 0);
 
-	bucket_insert_block(NULL, b, m);
+	ASSERT(CNT_OP(b, insert, NULL, m) == 0);
 
-	ASSERT(bucket_get_rm_block_bestfit(b, &m) == 0);
+	ASSERT(CNT_OP(b, get_rm_bestfit, &m) == 0);
 
 	ASSERT(m.chunk_id == TEST_CHUNK_ID);
 	ASSERT(m.zone_id == TEST_ZONE_ID);
@@ -178,15 +168,16 @@ test_bucket_insert_get()
 static void
 test_bucket_remove()
 {
-	struct bucket *b = bucket_new(TEST_UNIT_SIZE, TEST_MAX_UNIT);
+	struct bucket *b = bucket_new(1, BUCKET_RUN, CONTAINER_CTREE,
+		TEST_UNIT_SIZE, TEST_MAX_UNIT);
 	ASSERT(b != NULL);
 
 	struct memory_block m = {TEST_CHUNK_ID, TEST_ZONE_ID,
 		TEST_SIZE_IDX, TEST_BLOCK_OFF};
 
-	bucket_insert_block(NULL, b, m);
+	ASSERT(CNT_OP(b, insert, NULL, m) == 0);
 
-	ASSERT(bucket_get_rm_block_exact(b, m) == 0);
+	ASSERT(CNT_OP(b, get_rm_exact, m) == 0);
 
 	bucket_delete(b);
 }

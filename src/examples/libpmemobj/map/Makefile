@@ -39,7 +39,12 @@ LIBRARIES = map_ctree map_btree map_rbtree\
 	    map_hashmap_atomic map_hashmap_tx\
 	    map
 
-LIBS = -lpmemobj -pthread
+LIBUV := $(shell pkg-config libuv && echo "y" || echo "n")
+ifeq ($(LIBUV),y)
+PROGS += kv_server
+endif
+
+LIBS = -lpmemobj -pthread $(shell pkg-config --libs libuv)
 
 include ../../Makefile.inc
 
@@ -49,6 +54,7 @@ CFLAGS += -I../tree_map
 
 mapcli: mapcli.o libmap.a
 data_store: data_store.o libmap.a
+kv_server: kv_server.o libmap.a
 
 libmap_ctree.o: map_ctree.o map.o ../tree_map/libctree_map.a
 libmap_btree.o: map_btree.o map.o ../tree_map/libbtree_map.a

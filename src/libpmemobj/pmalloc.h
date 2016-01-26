@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Intel Corporation
+ * Copyright (c) 2015-2016, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,18 +37,18 @@
 int heap_boot(PMEMobjpool *pop);
 int heap_init(PMEMobjpool *pop);
 void heap_vg_open(PMEMobjpool *pop);
-int heap_cleanup(PMEMobjpool *pop);
+void heap_cleanup(PMEMobjpool *pop);
 int heap_check(PMEMobjpool *pop);
 
 int pmalloc(PMEMobjpool *pop, uint64_t *off, size_t size, uint64_t data_off);
 int pmalloc_construct(PMEMobjpool *pop, uint64_t *off, size_t size,
-	void (*constructor)(PMEMobjpool *pop, void *ptr, void *arg), void *arg,
-	uint64_t data_off);
+	void (*constructor)(PMEMobjpool *pop, void *ptr, size_t usable_size,
+	void *arg), void *arg, uint64_t data_off);
 
 int prealloc(PMEMobjpool *pop, uint64_t *off, size_t size, uint64_t data_off);
 int prealloc_construct(PMEMobjpool *pop, uint64_t *off, size_t size,
-	void (*constructor)(PMEMobjpool *pop, void *ptr, void *arg), void *arg,
-	uint64_t data_off);
+	void (*constructor)(PMEMobjpool *pop, void *ptr, size_t usable_size,
+	void *arg), void *arg, uint64_t data_off);
 
 size_t pmalloc_usable_size(PMEMobjpool *pop, uint64_t off);
-int pfree(PMEMobjpool *pop, uint64_t *off, uint64_t data_off);
+void pfree(PMEMobjpool *pop, uint64_t *off, uint64_t data_off);

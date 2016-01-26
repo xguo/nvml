@@ -109,7 +109,7 @@ pmemlog_map(PMEMobjpool *pop, size_t fsize)
 
 	TX_BEGIN(pop) {
 		TX_ADD(bp);
-		D_RW(bp)->log = TX_ALLOC(struct log, pool_size);
+		D_RW(bp)->log = TX_ZALLOC(struct log, pool_size);
 		D_RW(D_RW(bp)->log)->hdr.data_size =
 				pool_size - sizeof (struct log_hdr);
 	} TX_ONABORT {
@@ -407,8 +407,10 @@ main(int argc, char *argv[])
 		switch (*argv[i]) {
 			case 'a': {
 				printf("append: %s\n", argv[i] + 2);
-				pmemlog_append(plp, argv[i] + 2,
-					strlen(argv[i] + 2));
+				if (pmemlog_append(plp, argv[i] + 2,
+					strlen(argv[i] + 2)))
+					fprintf(stderr, "pmemlog_append"
+						" error\n");
 				break;
 			}
 			case 'v': {
@@ -416,9 +418,14 @@ main(int argc, char *argv[])
 				int count = count_iovec(argv[i] + 2);
 				struct iovec *iov = malloc(count
 						* sizeof (struct iovec));
-				assert(iov != NULL);
+				if (iov == NULL) {
+					fprintf(stderr, "malloc error\n");
+					return 1;
+				}
 				fill_iovec(iov, argv[i] + 2);
-				pmemlog_appendv(plp, iov, count);
+				if (pmemlog_appendv(plp, iov, count))
+					fprintf(stderr, "pmemlog_appendv"
+						" error\n");
 				free(iov);
 				break;
 			}

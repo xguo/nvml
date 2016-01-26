@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Intel Corporation
+ * Copyright (c) 2015-2016, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -273,7 +273,7 @@ test_list_api(PMEMobjpool *pop)
 	int nodes_count = 0;
 
 	ASSERTeq(pmemobj_type_num(root.oid), POBJ_ROOT_TYPE_NUM);
-	ASSERTeq(TOID_TYPE_NUM_OF(root), POBJ_ROOT_TYPE_NUM);
+	UT_COMPILE_ERROR_ON(TOID_TYPE_NUM_OF(root) != POBJ_ROOT_TYPE_NUM);
 
 	TOID(struct dummy_node) first;
 	TOID(struct dummy_node) iter;
@@ -508,6 +508,24 @@ test_tx_api(PMEMobjpool *pop)
 		TX_FREE(D_RW(root)->node);
 		D_RW(root)->node = TOID_NULL(struct dummy_node);
 		TOID_ASSIGN(D_RW(root)->node, OID_NULL);
+	} TX_END
+
+	errno = 0;
+	TX_BEGIN(pop) {
+		TX_BEGIN(NULL) {
+		} TX_ONCOMMIT {
+			ASSERT(0);
+		} TX_END
+		ASSERT(errno == EFAULT);
+	} TX_END
+
+	errno = 0;
+	TX_BEGIN(pop) {
+		TX_BEGIN((void *)(uintptr_t)7) {
+		} TX_ONCOMMIT {
+			ASSERT(0);
+		} TX_END
+		ASSERT(errno == EINVAL);
 	} TX_END
 }
 

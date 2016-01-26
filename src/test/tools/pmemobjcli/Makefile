@@ -1,6 +1,4 @@
-#!/bin/bash -e
-#
-# Copyright (c) 2015, Intel Corporation
+# Copyright (c) 2014-2015, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -30,25 +28,17 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
-
+# Makefile -- Makefile for pmemalloc tool
 #
-# src/test/obj_first/TEST0 -- unit test for list_first
-#
-# Returns first object on the proper list
-#
-export UNITTEST_NAME=obj_first/TEST0
-export UNITTEST_NUM=0
 
-# standard unit test setup
-. ../unittest/unittest.sh
+TOP=../../../..
 
-setup
+TARGET = pmemobjcli
 
-expect_normal_exit ./obj_first$EXESUFFIX $DIR/testfile\
-	a:0:1 a:0:0 a:1:1 a:0:2 a:1:2 P:0 P:1\
-	f:0 f:1 r:0:0 r:1:0 P:0 P:1\
-	f:0 f:1 a:0:3 a:1:3 P:0 P:1\
-	f:0 f:1
-check
+OBJS = pmemobjcli.o
 
-pass
+LIBPMEM=y
+LIBPMEMOBJ=y
+TOOLS_COMMON=y
+
+include $(TOP)/src/tools/Makefile.inc

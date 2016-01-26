@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2014-2015, Intel Corporation
+# Copyright (c) 2014-2016, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -34,7 +34,7 @@
 # src/test/unittest/Makefile -- build unittest support library
 #
 
-TOP := $(dir $(lastword $(MAKEFILE_LIST)))/../../..
+TOP := $(dir $(lastword $(MAKEFILE_LIST)))../../..
 include $(TOP)/src/common.inc
 
 TARGET = libut.a
@@ -50,7 +50,9 @@ CFLAGS += -Wunused-macros
 CFLAGS += -Wmissing-field-initializers
 CFLAGS += -Wsign-conversion
 CFLAGS += -Wsign-compare
-#CFLAGS += -Wconversion
+ifeq ($(call check_Wconversion), y)
+CFLAGS += -Wconversion
+endif
 CFLAGS += -pthread
 CFLAGS += -fno-common
 CFLAGS += $(EXTRA_CFLAGS)
@@ -70,13 +72,12 @@ all test: $(TARGET)
 $(TARGET): $(OBJS)
 	$(AR) rv $@ $(OBJS)
 
+objdir=.
+
 .c.o:
 	@mkdir -p .deps
 	$(CC) -MD -c $(CFLAGS) $(INCS) $(COMMONINCS) $< -o $@
-	@cp $*.d .deps/$*.P; \
-	sed -e 's/#.*//' -e 's/^[^:]*: *//' -e 's/ *\\$$//' \
-	    -e '/^$$/ d' -e 's/$$/ :/' < $*.d >> .deps/$*.P; \
-	$(RM) -f $*.d
+	$(create-deps)
 
 clean:
 	$(RM) *.o core a.out

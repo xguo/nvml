@@ -33,7 +33,7 @@
 #
 # examples/Makefile.inc -- build the NVM Library examples
 #
-TOP_SRC := $(dir $(lastword $(MAKEFILE_LIST)))/..
+TOP_SRC := $(dir $(lastword $(MAKEFILE_LIST)))..
 TOP := $(TOP_SRC)/..
 
 include $(TOP)/src/common.inc
@@ -41,9 +41,15 @@ include $(TOP)/src/common.inc
 INCDIR ?= $(TOP_SRC)/include
 LIBDIR ?= $(TOP_SRC)/debug
 
+CXXFLAGS = -std=c++11 -ggdb -Wall -Werror $(EXTRA_CXXFLAGS)
 CFLAGS = -std=gnu99 -ggdb -Wall -Werror $(EXTRA_CFLAGS)
 LDFLAGS = -Wl,-rpath=$(LIBDIR) -L$(LIBDIR) $(EXTRA_LDFLAGS)
 INCS = -I$(INCDIR) -I.
+
+LINKER=$(CC)
+ifeq ($(COMPILE_LANG), cpp)
+LINKER=$(CXX)
+endif
 
 all-dirs:     TARGET = all
 clean-dirs:   TARGET = clean
@@ -93,8 +99,11 @@ clean-progs clean-libraries:
 .c.o:
 	$(CC) -c -o $@ $(CFLAGS) $(INCS) $<
 
+.cpp.o:
+	$(CXX) -c -o $@ $(CXXFLAGS) $(INCS) $<
+
 $(PROGS):
-	$(CC) -o $@ $(LDFLAGS) $^ $(LIBS)
+	$(LINKER) -o $@ $(LDFLAGS) $^ $(LIBS)
 
 lib%.o:
 	$(LD) -o $@ -r $^

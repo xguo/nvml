@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, Intel Corporation
+ * Copyright (c) 2014-2015, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -41,9 +41,9 @@
  */
 int
 ut_pthread_create(const char *file, int line, const char *func,
-    pthread_t *restrict thread,
-    const pthread_attr_t *restrict attr,
-    void *(*start_routine)(void *), void *restrict arg)
+    pthread_t *__restrict thread,
+    const pthread_attr_t *__restrict attr,
+    void *(*start_routine)(void *), void *__restrict arg)
 {
 	if ((errno = pthread_create(thread, attr, start_routine, arg)) != 0)
 		ut_fatal(file, line, func, "!pthread_create");

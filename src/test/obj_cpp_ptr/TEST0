@@ -1,3 +1,4 @@
+#!/bin/bash -e
 #
 # Copyright (c) 2015, Intel Corporation
 #
@@ -30,16 +31,17 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-#
-# src/test/obj_first/Makefile -- build obj_first unit test
-#
+export UNITTEST_NAME=obj_cpp_ptr/TEST0
+export UNITTEST_NUM=0
 
-TARGET = obj_first
-OBJS = obj_first.o
+# standard unit test setup
+. ../unittest/unittest.sh
 
-LIBPMEM=y
-LIBPMEMOBJ=y
+require_cxx11
 
-include ../Makefile.inc
+setup
 
-INCS += -I../../libpmemobj/ -I../../common/
+expect_normal_exit\
+    ./obj_cpp_ptr$EXESUFFIX $DIR/testfile1
+
+pass

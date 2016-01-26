@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2014-2015, Intel Corporation
+# Copyright (c) 2014-2016, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -37,6 +37,16 @@
 [ "$FS" ] || export FS=local
 [ "$BUILD" ] || export BUILD=debug
 [ "$MEMCHECK" ] || export MEMCHECK=auto
+[ "$CHECK_POOL" ] || export CHECK_POOL=0
+[ "$VERBOSE" ] || export VERBOSE=0
+
+TOOLS=../tools
+# Paths to some useful tools
+[ -n "$PMEMPOOL" ] || PMEMPOOL=../../tools/pmempool/pmempool
+[ -n "$PMEMSPOIL" ] || PMEMSPOIL=$TOOLS/pmemspoil/pmemspoil.static-nondebug
+[ -n "$PMEMWRITE" ] || PMEMWRITE=$TOOLS/pmemwrite/pmemwrite
+[ -n "$PMEMALLOC" ] || PMEMALLOC=$TOOLS/pmemalloc/pmemalloc
+[ -n "$PMEMDETECT" ] || PMEMDETECT=$TOOLS/pmemdetect/pmemdetect.static-nondebug
 
 # force globs to fail if they don't match
 shopt -s failglob
@@ -97,7 +107,7 @@ if [ ! -n "$UNITTEST_NUM" ]; then
 fi
 
 if [ "$DIR" ]; then
-	 DIR=$DIR/$curtestdir$UNITTEST_NUM
+	DIR=$DIR/$curtestdir$UNITTEST_NUM
 else
 	case "$FS"
 	in
@@ -115,6 +125,16 @@ else
 		[ "$UNITTEST_QUIET" ] || echo "$UNITTEST_NAME: SKIP fs-type $FS (not configured)"
 		exit 0
 	}
+fi
+
+if [ -d "$PMEM_FS_DIR" ]; then
+	$PMEMDETECT "$PMEM_FS_DIR" && true
+	PMEM_IS_PMEM=$?
+fi
+
+if [ -d "$NON_PMEM_FS_DIR" ]; then
+	$PMEMDETECT "$NON_PMEM_FS_DIR" && true
+	NON_PMEM_IS_PMEM=$?
 fi
 
 #
@@ -139,6 +159,11 @@ export VMMALLOC_LOG_FILE=vmmalloc$UNITTEST_NUM.log
 
 export MEMCHECK_LOG_FILE=memcheck_${BUILD}_${UNITTEST_NUM}.log
 export VALIDATE_MEMCHECK_LOG=1
+if [ -z "$UT_DUMP_LINES" ]; then
+	UT_DUMP_LINES=30
+fi
+
+export CHECK_POOL_LOG_FILE=check_pool_${BUILD}_${UNITTEST_NUM}.log
 
 #
 # create_file -- create zeroed out files of a given length in megs
@@ -279,6 +304,20 @@ function create_poolset() {
 	done
 }
 
+function dump_last_n_lines() {
+	if [ -f $1 ]; then
+		ln=`wc -l < $1`
+		if [ $ln -gt $UT_DUMP_LINES ]; then
+			echo -e "Last $UT_DUMP_LINES lines of $1 below (whole file has $ln lines)." >&2
+			ln=$UT_DUMP_LINES
+		else
+			echo -e "$1 below." >&2
+		fi
+		paste -d " " <(yes $UNITTEST_NAME $1 | head -n $ln) <(tail -n $ln $1) >&2
+		echo >&2
+	fi
+}
+
 #
 # expect_normal_exit -- run a given command, expect it to exit 0
 #
@@ -332,6 +371,17 @@ function expect_normal_exit() {
 			paste -d " " <(yes $UNITTEST_NAME $MEMCHECK_LOG_FILE | head -n $ln) <(head -n $ln $MEMCHECK_LOG_FILE) >&2
 		fi
 
+		# ignore Ctrl-C
+		if [ $ret != 130 ]; then
+			dump_last_n_lines out$UNITTEST_NUM.log
+			dump_last_n_lines $PMEM_LOG_FILE
+			dump_last_n_lines $PMEMOBJ_LOG_FILE
+			dump_last_n_lines $PMEMLOG_LOG_FILE
+			dump_last_n_lines $PMEMBLK_LOG_FILE
+			dump_last_n_lines $VMEM_LOG_FILE
+			dump_last_n_lines $VMMALLOC_LOG_FILE
+		fi
+
 		false
 	fi
 
@@ -378,6 +428,33 @@ function expect_abnormal_exit() {
 }
 
 #
+# check_pool -- run pmempool check on specified pool file
+#
+function check_pool() {
+	if [ "$CHECK_POOL" == "1" ]
+	then
+		if [ "$VERBOSE" != "0" ]
+		then
+			echo "$UNITTEST_NAME: checking consistency of pool ${1}"
+		fi
+		${PMEMPOOL}.static-nondebug check $1 2>&1 1>>$CHECK_POOL_LOG_FILE
+	fi
+}
+
+#
+# check_pools -- run pmempool check on specified pool files
+#
+function check_pools() {
+	if [ "$CHECK_POOL" == "1" ]
+	then
+		for f in $*
+		do
+			check_pool $f
+		done
+	fi
+}
+
+#
 # require_unlimited_vm -- require unlimited virtual memory
 #
 # This implies requirements for:
@@ -415,12 +492,40 @@ function require_test_type() {
 }
 
 #
+# require_pmem -- only allow script to continue for a real PMEM device
+#
+function require_pmem() {
+	[ $PMEM_IS_PMEM -eq 0 ] && return
+	echo "error: PMEM_FS_DIR=$PMEM_FS_DIR does not point to a PMEM device"
+	exit 1
+}
+
+#
+# require_non_pmem -- only allow script to continue for a non-PMEM device
+#
+function require_non_pmem() {
+	[ $NON_PMEM_IS_PMEM -ne 0 ] && return
+	echo "error: NON_PMEM_FS_DIR=$NON_PMEM_FS_DIR does not point to a non-PMEM device"
+	exit 1
+}
+
+#
 # require_fs_type -- only allow script to continue for a certain fs type
 #
 function require_fs_type() {
+	req_fs_type=1
 	for type in $*
 	do
-		[ "$type" = "$FS" ] && return
+		[ "$type" = "$FS" ] &&
+		case "$FS"
+		in
+		pmem)
+			require_pmem && return
+			;;
+		non-pmem)
+			require_non_pmem && return
+			;;
+		esac
 	done
 	[ "$UNITTEST_QUIET" ] || echo "$UNITTEST_NAME: SKIP fs-type $FS ($* required)"
 	exit 0
@@ -462,7 +567,7 @@ function memcheck() {
 function require_valgrind() {
 	require_no_asan
 	VALGRINDEXE=`which valgrind 2>/dev/null` && return
-	echo "$UNITTEST_NAME: SKIP valgrind package required"
+	echo "error: $UNITTEST_NAME: SKIP valgrind package required"
 	exit 0
 }
 
@@ -616,6 +721,21 @@ function require_no_asan_for() {
 }
 
 #
+# require_cxx11 -- continue script execution only if C++11 supporting compiler
+#	is installed
+#
+function require_cxx11() {
+	CXX11_AVAILABLE=`echo "int main(){return 0;}" |\
+		$CXX -std=c++11 -x c++ -o /dev/null - 2>/dev/null &&\
+		echo y || echo n`
+
+	if [ "$CXX11_AVAILABLE" == "n" ]; then
+		echo "$UNITTEST_NAME: SKIP: C++11 required"
+		exit 0
+	fi
+}
+
+#
 # require_no_asan - continue script execution only if libpmem does NOT require
 #	libasan
 #
@@ -644,6 +764,12 @@ function setup() {
 	# make sure we have a well defined locale for string operations here
 	export LC_ALL="C"
 
+	# skip checks in local dir when test did not require any fs type
+	# (in such cases local is equal to either non-pmem or pmem)
+	if [ "$FS" = "local" -a "$req_fs_type" != "1" ]; then
+		exit 0
+	fi
+
 	if [ "$MEMCHECK" = "force-enable" ]; then
 		export RUN_MEMCHECK=1
 	fi
@@ -655,6 +781,9 @@ function setup() {
 	fi
 
 	echo "$UNITTEST_NAME: SETUP ($TEST/$FS/$BUILD$MCSTR)"
+
+	rm -f check_pool_${BUILD}_${UNITTEST_NUM}.log
+
 	if [ -d "$DIR" ]; then
 		rm --one-file-system -rf -- $DIR
 	fi
@@ -677,13 +806,6 @@ function pass() {
 	echo -e "$UNITTEST_NAME: $msg"
 	rm --one-file-system -rf -- $DIR
 }
-
-TOOLS=../tools
-# Paths to some useful tools
-[ -n "$PMEMPOOL" ] || PMEMPOOL=../../tools/pmempool/pmempool
-[ -n "$PMEMSPOIL" ] || PMEMSPOIL=$TOOLS/pmemspoil/pmemspoil.static-nondebug
-[ -n "$PMEMWRITE" ] || PMEMWRITE=$TOOLS/pmemwrite/pmemwrite
-[ -n "$PMEMALLOC" ] || PMEMALLOC=$TOOLS/pmemalloc/pmemalloc
 
 # Length of pool file's signature
 SIG_LEN=8
@@ -725,17 +847,25 @@ check_files()
 }
 
 #
+# check_no_file -- check if file has been deleted and print error message if not
+#
+check_no_file()
+{
+	if [ -f $1 ]
+	then
+		echo "Not deleted file: ${1}" >&2
+		exit 1
+	fi
+}
+
+#
 # check_no_files -- check if files has been deleted and print error message if not
 #
 check_no_files()
 {
 	for file in $*
 	do
-		if [ -f $file ]
-		then
-			echo "Not deleted file: ${file}" >&2
-			exit 1
-		fi
+		check_no_file $file
 	done
 }
 

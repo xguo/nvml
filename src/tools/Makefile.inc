@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2015, Intel Corporation
+# Copyright (c) 2014-2016, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,7 +31,7 @@
 # src/tools/Makefile.inc -- Makefile include for all tools
 #
 
-TOP := $(dir $(lastword $(MAKEFILE_LIST)))/../..
+TOP := $(dir $(lastword $(MAKEFILE_LIST)))../..
 include $(TOP)/src/common.inc
 
 INCS += -I.
@@ -45,7 +45,9 @@ CFLAGS += -Wunused-macros
 CFLAGS += -Wmissing-field-initializers
 CFLAGS += -Wsign-conversion
 CFLAGS += -Wsign-compare
-#CFLAGS += -Wconversion
+ifeq ($(call check_Wconversion), y)
+CFLAGS += -Wconversion
+endif
 CFLAGS += -fno-common
 CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS += -O2 -D_FORTIFY_SOURCE=2
@@ -68,37 +70,70 @@ TARGET_STATIC_NONDEBUG=$(TARGET).static-nondebug
 TARGET_STATIC_DEBUG=$(TARGET).static-debug
 
 LIBSDIR=$(TOP)/src
+LIBSDIR_DEBUG=$(LIBSDIR)/debug
+LIBSDIR_NONDEBUG=$(LIBSDIR)/nondebug
+
+ifneq ($(DEBUG),)
+LIBSDIR_PRIV=$(LIBSDIR_DEBUG)
+else
+LIBSDIR_PRIV=$(LIBSDIR_NONDEBUG)
+endif
+
+PMEMOBJ_PRIV_OBJ=$(LIBSDIR_PRIV)/libpmemobj/libpmemobj_unscoped.o
+PMEMBLK_PRIV_OBJ=$(LIBSDIR_PRIV)/libpmemblk/libpmemblk_unscoped.o
 
 LIBS += -pthread -luuid
 
 ifeq ($(LIBPMEMBLK), y)
 DYNAMIC_LIBS += -lpmemblk
-STATIC_DEBUG_LIBS += $(LIBSDIR)/debug/libpmemblk.a
-STATIC_NONDEBUG_LIBS += $(LIBSDIR)/nondebug/libpmemblk.a
+STATIC_DEBUG_LIBS += $(LIBSDIR_DEBUG)/libpmemblk.a
+STATIC_NONDEBUG_LIBS += $(LIBSDIR_NONDEBUG)/libpmemblk.a
 endif
 
 ifeq ($(LIBPMEMLOG), y)
 DYNAMIC_LIBS += -lpmemlog
-STATIC_DEBUG_LIBS += $(LIBSDIR)/debug/libpmemlog.a
-STATIC_NONDEBUG_LIBS += $(LIBSDIR)/nondebug/libpmemlog.a
+STATIC_DEBUG_LIBS += $(LIBSDIR_DEBUG)/libpmemlog.a
+STATIC_NONDEBUG_LIBS += $(LIBSDIR_NONDEBUG)/libpmemlog.a
 endif
 
 ifeq ($(LIBPMEMOBJ), y)
 DYNAMIC_LIBS += -lpmemobj
-STATIC_DEBUG_LIBS += $(LIBSDIR)/debug/libpmemobj.a
-STATIC_NONDEBUG_LIBS += $(LIBSDIR)/nondebug/libpmemobj.a
+STATIC_DEBUG_LIBS += $(LIBSDIR_DEBUG)/libpmemobj.a
+STATIC_NONDEBUG_LIBS += $(LIBSDIR_NONDEBUG)/libpmemobj.a
 endif
 
 ifeq ($(LIBPMEM),y)
 DYNAMIC_LIBS += -lpmem
-STATIC_DEBUG_LIBS += $(LIBSDIR)/debug/libpmem.a
-STATIC_NONDEBUG_LIBS += $(LIBSDIR)/nondebug/libpmem.a
+STATIC_DEBUG_LIBS += $(LIBSDIR_DEBUG)/libpmem.a
+STATIC_NONDEBUG_LIBS += $(LIBSDIR_NONDEBUG)/libpmem.a
 endif
 
 ifeq ($(LIBVMEM),y)
 DYNAMIC_LIBS += -lvmem
-STATIC_DEBUG_LIBS += $(LIBSDIR)/debug/libvmem.a
-STATIC_NONDEBUG_LIBS += $(LIBSDIR)/nondebug/libvmem.a
+STATIC_DEBUG_LIBS += $(LIBSDIR_DEBUG)/libvmem.a
+STATIC_NONDEBUG_LIBS += $(LIBSDIR_NONDEBUG)/libvmem.a
+endif
+
+ifeq ($(TOOLS_COMMON), y)
+vpath %.c $(TOP)/src/common
+vpath %.c $(TOP)/src/tools/pmempool
+
+OBJS += common.o output.o util.o set.o
+CFLAGS += -I$(TOP)/src/common
+CFLAGS += -I$(TOP)/src/libpmemlog
+CFLAGS += -I$(TOP)/src/libpmemblk
+CFLAGS += -I$(TOP)/src/libpmemobj
+CFLAGS += -I$(TOP)/src/tools/pmempool
+common.o: CFLAGS += -D__USE_UNIX98
+
+endif
+
+ifneq ($(LIBPMEMOBJ_PRIV),)
+OBJS += pmemobj_priv.o
+endif
+
+ifneq ($(LIBPMEMBLK_PRIV),)
+OBJS += pmemblk_priv.o
 endif
 
 all: $(TARGET) $(TARGET_STATIC_NONDEBUG) $(TARGET_STATIC_DEBUG)
@@ -148,13 +183,24 @@ $(TARGET_STATIC_NONDEBUG): $(OBJS) $(STATIC_NONDEBUG_LIBS)
 $(TARGET): $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS) $(DYNAMIC_LIBS)
 
+$(PMEMOBJ_PRIV_OBJ):
+	$(MAKE) -C $(LIBSDIR) libpmemobj
+
+pmemobj_priv.o: $(PMEMOBJ_PRIV_OBJ)
+	$(OBJCOPY) --localize-hidden $(addprefix -G, $(LIBPMEMOBJ_PRIV)) $< $@
+
+$(PMEMBLK_PRIV_OBJ):
+	$(MAKE) -C $(LIBSDIR) libpmemblk
+
+pmemblk_priv.o: $(PMEMBLK_PRIV_OBJ)
+	$(OBJCOPY) --localize-hidden $(addprefix -G, $(LIBPMEMBLK_PRIV)) $< $@
+
+objdir=.
+
 %.o: %.c
 	@mkdir -p .deps
 	$(CC) -MD $(CFLAGS) $(INCS) -c -o $@ $<
-	@cp $*.d .deps/$*.P; \
-	sed -e 's/#.*//' -e 's/^[^:]*: *//' -e 's/ *\\$$//' \
-	    -e '/^$$/ d' -e 's/$$/ :/' < $*.d >> .deps/$*.P; \
-	$(RM) -f $*.d
+	$(create-deps)
 
 test check pcheck: all
 

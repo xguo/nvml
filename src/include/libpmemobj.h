@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015, Intel Corporation
+ * Copyright (c) 2014-2016, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -51,6 +51,7 @@ extern "C" {
 #define	__STDC_LIMIT_MACROS
 #endif
 
+#include <errno.h>
 #include <sys/types.h>
 #include <setjmp.h>
 #include <stdint.h>
@@ -342,9 +343,9 @@ pmemobj_direct(PMEMoid oid)
 }
 
 #define	DIRECT_RW(o) (\
-{typeof (o) _o; _o._type = NULL; (void)_o;\
-(typeof (*(o)._type) *)pmemobj_direct((o).oid); })
-#define	DIRECT_RO(o) ((const typeof (*(o)._type) *)pmemobj_direct((o).oid))
+{__typeof__(o) _o; _o._type = NULL; (void)_o;\
+(__typeof__(*(o)._type) *)pmemobj_direct((o).oid); })
+#define	DIRECT_RO(o) ((const __typeof__(*(o)._type) *)pmemobj_direct((o).oid))
 
 #define	D_RW	DIRECT_RW
 #define	D_RO	DIRECT_RO
@@ -491,7 +492,7 @@ PMEMoid pmemobj_next(PMEMoid oid);
 _pobj_ret; })
 
 #define	POBJ_NEXT(o) (\
-{ typeof (o) _pobj_ret = (typeof (o))pmemobj_next((o).oid);\
+{ __typeof__(o) _pobj_ret = (__typeof__(o))pmemobj_next((o).oid);\
 _pobj_ret; })
 
 #define	POBJ_NEW(pop, o, t, constr, arg) (\
@@ -583,7 +584,7 @@ for (_POBJ_DEBUG_NOTICE_IN_TX_FOR("POBJ_FOREACH_SAFE")\
  */
 #define	POBJ_FOREACH_TYPE(pop, var)\
 for (_POBJ_DEBUG_NOTICE_IN_TX_FOR("POBJ_FOREACH_TYPE")\
-	var = (typeof (var))pmemobj_first((pop),\
+	var = (__typeof__(var))pmemobj_first((pop),\
 		TOID_TYPE_NUM_OF(var));\
 		TOID_IS_NULL(var) == 0;\
 		var = POBJ_NEXT(var))
@@ -594,7 +595,7 @@ for (_POBJ_DEBUG_NOTICE_IN_TX_FOR("POBJ_FOREACH_TYPE")\
  */
 #define	POBJ_FOREACH_SAFE_TYPE(pop, var, nvar)\
 for (_POBJ_DEBUG_NOTICE_IN_TX_FOR("POBJ_FOREACH_SAFE_TYPE")\
-	var = (typeof (var))pmemobj_first((pop),\
+	var = (__typeof__(var))pmemobj_first((pop),\
 	TOID_TYPE_NUM_OF(var));\
 	TOID_IS_NULL(var) == 0 &&\
 	(nvar = POBJ_NEXT(var), 1);\
@@ -638,6 +639,8 @@ D_RO((head)->pe_first)->field.pe_prev)
 #define	POBJ_LIST_EMPTY(head)	(TOID_IS_NULL((head)->pe_first))
 #define	POBJ_LIST_NEXT(elm, field)	(D_RO(elm)->field.pe_next)
 #define	POBJ_LIST_PREV(elm, field)	(D_RO(elm)->field.pe_prev)
+#define	POBJ_LIST_DEST_HEAD	1
+#define	POBJ_LIST_DEST_TAIL	0
 
 #define	POBJ_LIST_FOREACH(var, head, field)\
 for (_POBJ_DEBUG_NOTICE_IN_TX_FOR("POBJ_LIST_FOREACH")\
@@ -659,90 +662,84 @@ for (_POBJ_DEBUG_NOTICE_IN_TX_FOR("POBJ_LIST_FOREACH_REVERSE")\
 
 #define	POBJ_LIST_INSERT_HEAD(pop, head, elm, field)\
 pmemobj_list_insert((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
-	(head), POBJ_LIST_FIRST((head)).oid,\
-	1 /* before */, (elm).oid)
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
+	(head), OID_NULL,\
+	POBJ_LIST_DEST_HEAD, (elm).oid)
 
 #define	POBJ_LIST_INSERT_TAIL(pop, head, elm, field)\
 pmemobj_list_insert((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
-	(head), POBJ_LIST_LAST((head), field).oid,\
-	0 /* after */, (elm).oid)
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
+	(head), OID_NULL,\
+	POBJ_LIST_DEST_TAIL, (elm).oid)
 
 #define	POBJ_LIST_INSERT_AFTER(pop, head, listelm, elm, field)\
 pmemobj_list_insert((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
 	(head), (listelm).oid,\
 	0 /* after */, (elm).oid)
 
 #define	POBJ_LIST_INSERT_BEFORE(pop, head, listelm, elm, field)\
 pmemobj_list_insert((pop), \
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
 	(head), (listelm).oid,\
 	1 /* before */, (elm).oid)
 
 #define	POBJ_LIST_INSERT_NEW_HEAD(pop, head, field, size, constr, arg)\
 pmemobj_list_insert_new((pop),\
-	offsetof(typeof (*((head)->pe_first._type)), field),\
-	(head), POBJ_LIST_FIRST((head)).oid,\
-	1 /* before */,	(size),\
+	offsetof(__typeof__ (*((head)->pe_first._type)), field),\
+	(head), OID_NULL, POBJ_LIST_DEST_HEAD, (size),\
 	TOID_TYPE_NUM_OF((head)->pe_first), (constr), (arg))
 
 #define	POBJ_LIST_INSERT_NEW_TAIL(pop, head, field, size, constr, arg)\
 pmemobj_list_insert_new((pop),\
-	offsetof(typeof (*((head)->pe_first._type)), field),\
-	(head), POBJ_LIST_LAST((head), field).oid,\
-	0 /* after */, (size),\
+	offsetof(__typeof__ (*((head)->pe_first._type)), field),\
+	(head), OID_NULL, POBJ_LIST_DEST_TAIL, (size),\
 	TOID_TYPE_NUM_OF((head)->pe_first), (constr), (arg))
 
 #define	POBJ_LIST_INSERT_NEW_AFTER(pop, head, listelm, field, size,\
 	constr, arg)\
 pmemobj_list_insert_new((pop),\
-	offsetof(typeof (*((head)->pe_first._type)), field),\
+	offsetof(__typeof__ (*((head)->pe_first._type)), field),\
 	(head), (listelm).oid, 0 /* after */, (size),\
 	TOID_TYPE_NUM_OF((head)->pe_first), (constr), (arg))
 
 #define	POBJ_LIST_INSERT_NEW_BEFORE(pop, head, listelm, field, size,\
 		constr, arg)\
 pmemobj_list_insert_new((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
 	(head), (listelm).oid, 1 /* before */, (size),\
 	TOID_TYPE_NUM_OF((head)->pe_first), (constr), (arg))
 
 #define	POBJ_LIST_REMOVE(pop, head, elm, field)\
 pmemobj_list_remove((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
 	(head), (elm).oid, 0 /* no free */)
 
 #define	POBJ_LIST_REMOVE_FREE(pop, head, elm, field)\
 pmemobj_list_remove((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
 	(head), (elm).oid, 1 /* free */)
 
 #define	POBJ_LIST_MOVE_ELEMENT_HEAD(pop, head, head_new, elm, field, field_new)\
 pmemobj_list_move((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
 	(head),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head_new)._type)), field_new),\
-	(head_new),\
-	POBJ_LIST_FIRST((head_new)).oid,\
-	1 /* before */, (elm).oid)
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head_new)._type)), field_new),\
+	(head_new), OID_NULL, POBJ_LIST_DEST_HEAD, (elm).oid)
 
 #define	POBJ_LIST_MOVE_ELEMENT_TAIL(pop, head, head_new, elm, field, field_new)\
 pmemobj_list_move((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
 	(head),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head_new)._type)), field_new),\
-	(head_new),\
-	POBJ_LIST_LAST((head_new), field_new).oid,\
-	0 /* after */, (elm).oid)
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head_new)._type)), field_new),\
+	(head_new), OID_NULL, POBJ_LIST_DEST_TAIL, (elm).oid)
 
 #define	POBJ_LIST_MOVE_ELEMENT_AFTER(pop,\
 	head, head_new, listelm, elm, field, field_new)\
 pmemobj_list_move((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
 	(head),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head_new)._type)), field_new),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head_new)._type)), field_new),\
 	(head_new),\
 	(listelm).oid,\
 	0 /* after */, (elm).oid)
@@ -750,9 +747,9 @@ pmemobj_list_move((pop),\
 #define	POBJ_LIST_MOVE_ELEMENT_BEFORE(pop,\
 	head, head_new, listelm, elm, field, field_new)\
 pmemobj_list_move((pop),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head)._type)), field),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head)._type)), field),\
 	(head),\
-	offsetof(typeof (*(POBJ_LIST_FIRST(head_new)._type)), field_new),\
+	offsetof(__typeof__ (*(POBJ_LIST_FIRST(head_new)._type)), field_new),\
 	(head_new),\
 	(listelm).oid,\
 	1 /* before */, (elm).oid)
@@ -798,20 +795,18 @@ int pmemobj_tx_begin(PMEMobjpool *pop, jmp_buf env, ...);
 /*
  * Aborts current transaction
  *
- * Must be called during TX_STAGE_WORK. Otherwise, has no effect.
+ * Causes transition to TX_STAGE_ONABORT.
  *
- * Always causes transition to TX_STAGE_ONABORT.
+ * This function must be called during TX_STAGE_WORK.
  */
 void pmemobj_tx_abort(int errnum);
 
 /*
  * Commits current transaction
  *
- * If successful and called during TX_STAGE_WORK, transaction stage changes
- * to TX_STAGE_ONCOMMIT and function returns zero. Otherwise, stage changes
- * to TX_STAGE_ONABORT and an error number is returned.
+ * This function must be called during TX_STAGE_WORK.
  */
-int pmemobj_tx_commit(void);
+void pmemobj_tx_commit(void);
 
 /*
  * Cleanups current transaction. Must always be called after pmemobj_tx_begin,
@@ -820,25 +815,41 @@ int pmemobj_tx_commit(void);
  * If called during TX_STAGE_NONE, has no effect.
  *
  * Always causes transition to TX_STAGE_NONE.
+ *
+ * If transaction was successful, returns 0. Otherwise returns error code set
+ * by pmemobj_tx_abort.
+ *
+ * This function must *not* be called during TX_STAGE_WORK.
  */
-void pmemobj_tx_end(void);
+int pmemobj_tx_end(void);
 
 /*
  * Performs the actions associated with current stage of the transaction,
  * and makes the transition to the next stage. Current stage must always
  * be obtained by calling pmemobj_tx_stage.
  *
- * If successful, function returns zero. Otherwise, an error number is returned.
+ * This function must be called in transaction.
  */
-int pmemobj_tx_process(void);
+void pmemobj_tx_process(void);
+
+/*
+ * Returns last transaction error code.
+ */
+int pmemobj_tx_errno(void);
 
 #define	_POBJ_TX_BEGIN(pop, ...)\
 {\
 	jmp_buf _tx_env;\
-	int _stage = TX_STAGE_NONE;\
-	setjmp(_tx_env);\
-	if (_stage == TX_STAGE_NONE)\
-		pmemobj_tx_begin(pop, _tx_env, __VA_ARGS__, TX_LOCK_NONE);\
+	int _stage;\
+	int _pobj_errno;\
+	if (setjmp(_tx_env)) {\
+		errno = pmemobj_tx_errno();\
+	} else {\
+		_pobj_errno = pmemobj_tx_begin(pop, _tx_env, __VA_ARGS__,\
+				TX_LOCK_NONE);\
+		if (_pobj_errno)\
+			errno = _pobj_errno;\
+	}\
 	while ((_stage = pmemobj_tx_stage()) != TX_STAGE_NONE) {\
 		switch (_stage) {\
 			case TX_STAGE_WORK:
@@ -871,7 +882,9 @@ _POBJ_TX_BEGIN(pop, ##__VA_ARGS__)
 				break;\
 		}\
 	}\
-	pmemobj_tx_end();\
+	_pobj_errno = pmemobj_tx_end();\
+	if (_pobj_errno)\
+		errno = _pobj_errno;\
 }
 
 /*
@@ -881,8 +894,10 @@ _POBJ_TX_BEGIN(pop, ##__VA_ARGS__)
  * range. In case of failure or abort, all the changes within this range will
  * be rolled-back automatically.
  *
- * If successful and called during TX_STAGE_WORK, function returns zero.
+ * If successful, returns zero.
  * Otherwise, state changes to TX_STAGE_ONABORT and an error number is returned.
+ *
+ * This function must be called during TX_STAGE_WORK.
  */
 int pmemobj_tx_add_range(PMEMoid oid, uint64_t off, size_t size);
 
@@ -893,56 +908,70 @@ int pmemobj_tx_add_range(PMEMoid oid, uint64_t off, size_t size);
  * be rolled-back automatically. The supplied block of memory has to be within
  * the given pool.
  *
- * If successful and called during TX_STAGE_WORK, function returns zero.
+ * If successful, returns zero.
  * Otherwise, state changes to TX_STAGE_ONABORT and an error number is returned.
+ *
+ * This function must be called during TX_STAGE_WORK.
  */
 int pmemobj_tx_add_range_direct(void *ptr, size_t size);
 
 /*
  * Transactionally allocates a new object.
  *
- * If successful and called during TX_STAGE_WORK, function returns PMEMoid.
+ * If successful, returns PMEMoid.
  * Otherwise, state changes to TX_STAGE_ONABORT and an OID_NULL is returned.
+ *
+ * This function must be called during TX_STAGE_WORK.
  */
 PMEMoid pmemobj_tx_alloc(size_t size, unsigned int type_num);
 
 /*
  * Transactionally allocates new zeroed object.
  *
- * If successful and called during TX_STAGE_WORK, function returns PMEMoid.
+ * If successful, returns PMEMoid.
  * Otherwise, state changes to TX_STAGE_ONABORT and an OID_NULL is returned.
+ *
+ * This function must be called during TX_STAGE_WORK.
  */
 PMEMoid pmemobj_tx_zalloc(size_t size, unsigned int type_num);
 
 /*
  * Transactionally resizes an existing object.
  *
- * If successful and called during TX_STAGE_WORK, function returns PMEMoid.
+ * If successful, returns PMEMoid.
  * Otherwise, state changes to TX_STAGE_ONABORT and an OID_NULL is returned.
+ *
+ * This function must be called during TX_STAGE_WORK.
  */
 PMEMoid pmemobj_tx_realloc(PMEMoid oid, size_t size, unsigned int type_num);
 
 /*
  * Transactionally resizes an existing object, if extended new space is zeroed.
  *
- * If successful and called during TX_STAGE_WORK, function returns PMEMoid.
+ * If successful, returns PMEMoid.
  * Otherwise, state changes to TX_STAGE_ONABORT and an OID_NULL is returned.
+ *
+ * This function must be called during TX_STAGE_WORK.
  */
 PMEMoid pmemobj_tx_zrealloc(PMEMoid oid, size_t size, unsigned int type_num);
 
 /*
  * Transactionally allocates a new object with duplicate of the string s.
  *
- * If successful and called during TX_STAGE_WORK, function returns PMEMoid.
+ * If successful, returns PMEMoid.
  * Otherwise, state changes to TX_STAGE_ONABORT and an OID_NULL is returned.
+ *
+ * This function must be called during TX_STAGE_WORK.
  */
 PMEMoid pmemobj_tx_strdup(const char *s, unsigned int type_num);
 
 /*
  * Transactionally frees an existing object.
  *
- * If successful and called during TX_STAGE_WORK, function returns zero.
+ * If successful, returns zero.
  * Otherwise, state changes to TX_STAGE_ONABORT and an error number is returned.
+ *
+ * This function must be called during TX_STAGE_WORK.
  */
 int pmemobj_tx_free(PMEMoid oid);
 
@@ -950,7 +979,7 @@ int pmemobj_tx_free(PMEMoid oid);
 pmemobj_tx_add_range((o).oid, 0, sizeof (*(o)._type))
 
 #define	TX_ADD_FIELD(o, field)\
-pmemobj_tx_add_range((o).oid, offsetof(typeof (*(o)._type), field),\
+pmemobj_tx_add_range((o).oid, offsetof(__typeof__ (*(o)._type), field),\
 		sizeof (D_RO(o)->field))
 
 #define	TX_NEW(t) (\
@@ -970,11 +999,13 @@ TOID_TYPE_NUM(t)); _pobj_ret; })
 TOID_TYPE_NUM(t)); _pobj_ret; })
 
 #define	TX_REALLOC(o, size) (\
-{ typeof (o) _pobj_ret = (typeof (o))pmemobj_tx_realloc((o).oid, (size),\
+{ __typeof__(o) _pobj_ret =\
+(__typeof__(o))pmemobj_tx_realloc((o).oid, (size),\
 TOID_TYPE_NUM_OF(o)); _pobj_ret; })
 
 #define	TX_ZREALLOC(o, size) (\
-{ typeof (o) _pobj_ret = (typeof (o))pmemobj_tx_zrealloc((o).oid, (size),\
+{ __typeof__(o) _pobj_ret =\
+(__typeof__(o))pmemobj_tx_zrealloc((o).oid, (size),\
 TOID_TYPE_NUM_OF(o)); _pobj_ret; })
 
 #define	TX_STRDUP(s, type_num)\

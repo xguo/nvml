@@ -41,9 +41,9 @@ OBJS = obj_realloc.o util.o out.o
 LIBPMEM=y
 LIBPMEMOBJ=y
 
+out.o: CFLAGS += -DSRCVERSION=\"utversion\"
+
 include ../Makefile.inc
 
 CFLAGS += -I../../libpmemobj
 CFLAGS += -I../../common
-
-out.o: CFLAGS += -DSRCVERSION=\"utversion\"

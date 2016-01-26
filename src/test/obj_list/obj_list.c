@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Intel Corporation
+ * Copyright (c) 2015-2016, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -406,7 +406,7 @@ FUNC_MOCK_END
  */
 FUNC_MOCK(pmalloc_construct, int, PMEMobjpool *pop, uint64_t *off,
 	size_t size, void (*constructor)(PMEMobjpool *pop, void *ptr,
-	void *arg), void *arg, uint64_t data_off)
+	size_t usable_size, void *arg), void *arg, uint64_t data_off)
 	FUNC_MOCK_RUN_DEFAULT {
 		size = 2 * (size - OOB_OFF) + OOB_OFF;
 		uint64_t *alloc_size = (uint64_t *)((uintptr_t)Pop +
@@ -421,7 +421,7 @@ FUNC_MOCK(pmalloc_construct, int, PMEMobjpool *pop, uint64_t *off,
 		Pop->persist(Pop, Heap_offset, sizeof (*Heap_offset));
 
 		void *ptr = (void *)((uintptr_t)Pop + *off + data_off);
-		constructor(pop, ptr, arg);
+		constructor(pop, ptr, size, arg);
 
 		return 0;
 	}
@@ -459,12 +459,12 @@ FUNC_MOCK_END
  */
 FUNC_MOCK(prealloc_construct, int, PMEMobjpool *pop, uint64_t *off,
 	size_t size, void (*constructor)(PMEMobjpool *pop, void *ptr,
-	void *arg), void *arg, uint64_t data_off)
+	size_t usable_size, void *arg), void *arg, uint64_t data_off)
 	FUNC_MOCK_RUN_DEFAULT {
 		int ret = prealloc(pop, off, size, data_off);
 		if (!ret) {
 			void *ptr = (void *)((uintptr_t)Pop + *off + data_off);
-			constructor(pop, ptr, arg);
+			constructor(pop, ptr, size, arg);
 		}
 		return ret;
 	}
@@ -498,6 +498,12 @@ FUNC_MOCK_RET_ALWAYS(pmemobj_mutex_lock, int, 0, PMEMobjpool *pop,
  * pmemobj_mutex_unlock -- pmemobj_mutex_unlock mock
  */
 FUNC_MOCK_RET_ALWAYS(pmemobj_mutex_unlock, int, 0, PMEMobjpool *pop,
+		PMEMmutex *mutexp);
+
+/*
+ * pmemobj_mutex_assert_locked -- pmemobj_mutex_unlock mock
+ */
+FUNC_MOCK_RET_ALWAYS(pmemobj_mutex_assert_locked, int, 0, PMEMobjpool *pop,
 		PMEMmutex *mutexp);
 
 /*
@@ -810,7 +816,7 @@ do_print_reverse(PMEMobjpool *pop, const char *arg)
  * new value
  */
 static void
-item_constructor(PMEMobjpool *pop, void *ptr, void *arg)
+item_constructor(PMEMobjpool *pop, void *ptr, size_t usable_size, void *arg)
 {
 	int id = *(int *)arg;
 	struct item *item = (struct item *)ptr;
@@ -830,7 +836,7 @@ struct realloc_arg {
  * id and argument value
  */
 static void
-realloc_constructor(PMEMobjpool *pop, void *ptr, void *arg)
+realloc_constructor(PMEMobjpool *pop, void *ptr, size_t usable_size, void *arg)
 {
 	struct realloc_arg *rarg = arg;
 	struct item *item = (struct item *)ptr;
@@ -854,7 +860,7 @@ do_insert_new(PMEMobjpool *pop, const char *arg)
 	int id;
 	int ret = sscanf(arg, "n:%d:%d:%d", &before, &n, &id);
 	if (ret == 3) {
-		ret = list_insert_new(pop,
+		ret = list_insert_new_user(pop,
 			(struct list_head *)&D_RW(List_oob)->head,
 			offsetof(struct item, next),
 			(struct list_head *)&D_RW(List)->head,
@@ -867,7 +873,7 @@ do_insert_new(PMEMobjpool *pop, const char *arg)
 		if (ret)
 			FATAL("list_insert_new(List, List_oob) failed");
 	} else if (ret == 2) {
-		ret = list_insert_new(pop,
+		ret = list_insert_new_user(pop,
 			(struct list_head *)&D_RW(List_oob)->head,
 			offsetof(struct item, next),
 			(struct list_head *)&D_RW(List)->head,
@@ -879,7 +885,7 @@ do_insert_new(PMEMobjpool *pop, const char *arg)
 		if (ret)
 			FATAL("list_insert_new(List, List_oob) failed");
 	} else {
-		ret = list_insert_new(pop,
+		ret = list_insert_new_user(pop,
 			(struct list_head *)&D_RW(List_oob)->head,
 			0, NULL, OID_NULL, 0,
 			sizeof (struct item),
@@ -938,7 +944,7 @@ do_remove_free(PMEMobjpool *pop, const char *arg)
 	}
 
 	if (N == 1) {
-		if (list_remove_free(pop,
+		if (list_remove_free_user(pop,
 			(struct list_head *)&D_RW(List_oob)->head,
 			0,
 			NULL,
@@ -946,7 +952,7 @@ do_remove_free(PMEMobjpool *pop, const char *arg)
 			FATAL("list_remove_free(List_oob) failed");
 		}
 	} else if (N == 2) {
-		if (list_remove_free(pop,
+		if (list_remove_free_user(pop,
 			(struct list_head *)&D_RW(List_oob)->head,
 			offsetof(struct item, next),
 			(struct list_head *)&D_RW(List)->head,
@@ -986,12 +992,10 @@ do_move_oob(PMEMobjpool *pop, const char *arg)
 	if (sscanf(arg, "o:%d", &n) != 1)
 		FATAL_USAGE_MOVE_OOB();
 
-	if (list_move_oob(pop,
+	list_move_oob(pop,
 		(struct list_head *)&D_RW(List_oob)->head,
 		(struct list_head *)&D_RW(List_oob_sec)->head,
-		get_item_oob_list(List_oob.oid, n))) {
-		FATAL("list_move_oob(List_oob, List_oob_sec) failed");
-	}
+		get_item_oob_list(List_oob.oid, n));
 }
 
 /*
@@ -1050,7 +1054,7 @@ do_realloc(PMEMobjpool *pop, const char *arg)
 	};
 
 	if (N == 1) {
-		if (list_realloc(pop,
+		if (list_realloc_user(pop,
 			(struct list_head *)&D_RW(List_oob)->head,
 			0,
 			NULL,
@@ -1063,7 +1067,7 @@ do_realloc(PMEMobjpool *pop, const char *arg)
 			FATAL("list_realloc(List) failed");
 		}
 	} else if (N == 2) {
-		if (list_realloc(pop,
+		if (list_realloc_user(pop,
 			(struct list_head *)&D_RW(List_oob)->head,
 			offsetof(struct item, next),
 			(struct list_head *)&D_RW(List)->head,
@@ -1110,7 +1114,7 @@ do_realloc_move(PMEMobjpool *pop, const char *arg)
 		.old_size = pmemobj_alloc_usable_size(Item->oid),
 		.new_size = size
 	};
-	if (list_realloc_move(pop,
+	if (list_realloc_move_user(pop,
 		(struct list_head *)&D_RW(List_oob)->head,
 		(struct list_head *)&D_RW(List_oob_sec)->head,
 		pe_offset,
@@ -1154,7 +1158,7 @@ main(int argc, char *argv[])
 
 	const char *path = argv[1];
 
-	ASSERTeq(OOB_OFF, 48);
+	UT_COMPILE_ERROR_ON(OOB_OFF != 48);
 	PMEMobjpool *pop = pmemobj_open(path, NULL);
 	ASSERTne(pop, NULL);
 

@@ -130,12 +130,17 @@ rbtree_map_new(PMEMobjpool *pop, TOID(struct rbtree_map) *map, void *arg)
  * rbtree_map_clear_node -- (internal) clears this node and its children
  */
 static void
-rbtree_map_clear_node(TOID(struct tree_map_node) p)
+rbtree_map_clear_node(TOID(struct rbtree_map) map, TOID(struct tree_map_node) p)
 {
-	rbtree_map_clear_node(D_RO(p)->slots[RB_LEFT]);
-	rbtree_map_clear_node(D_RO(p)->slots[RB_RIGHT]);
+	TOID(struct tree_map_node) s = D_RO(map)->sentinel;
 
-	pmemobj_tx_free(p.oid);
+	if (!NODE_IS_NULL(D_RO(p)->slots[RB_LEFT]))
+		rbtree_map_clear_node(map, D_RO(p)->slots[RB_LEFT]);
+
+	if (!NODE_IS_NULL(D_RO(p)->slots[RB_RIGHT]))
+		rbtree_map_clear_node(map, D_RO(p)->slots[RB_RIGHT]);
+
+	TX_FREE(p);
 }
 
 
@@ -146,9 +151,14 @@ int
 rbtree_map_clear(PMEMobjpool *pop, TOID(struct rbtree_map) map)
 {
 	TX_BEGIN(pop) {
-		rbtree_map_clear_node(D_RW(map)->root);
+		rbtree_map_clear_node(map, D_RW(map)->root);
 		TX_ADD_FIELD(map, root);
+		TX_ADD_FIELD(map, sentinel);
+
+		TX_FREE(D_RW(map)->sentinel);
+
 		D_RW(map)->root = TOID_NULL(struct tree_map_node);
+		D_RW(map)->sentinel = TOID_NULL(struct tree_map_node);
 	} TX_END
 
 	return 0;
@@ -219,6 +229,8 @@ rbtree_map_insert_bst(TOID(struct rbtree_map) map, TOID(struct tree_map_node) n)
 	}
 
 	TX_SET(n, parent, parent);
+
+	pmemobj_tx_add_range_direct(dst, sizeof (*dst));
 	*dst = n;
 }
 
@@ -283,7 +295,7 @@ rbtree_map_insert(PMEMobjpool *pop, TOID(struct rbtree_map) map,
 static TOID(struct tree_map_node)
 rbtree_map_successor(TOID(struct rbtree_map) map, TOID(struct tree_map_node) n)
 {
-	TOID(struct tree_map_node) dst = RB_FIRST(map);
+	TOID(struct tree_map_node) dst = D_RO(n)->slots[RB_RIGHT];
 	TOID(struct tree_map_node) s = D_RO(map)->sentinel;
 
 	if (!TOID_EQUALS(s, dst)) {
@@ -352,7 +364,7 @@ rbtree_map_repair_branch(TOID(struct rbtree_map) map,
 		TX_SET(D_RW(sb)->slots[!c], color, COLOR_BLACK);
 		rbtree_map_rotate(map, NODE_P(n), c);
 
-		return TOID_NULL(struct tree_map_node);
+		return RB_FIRST(map);
 	}
 
 	return n;
@@ -366,8 +378,10 @@ static void
 rbtree_map_repair(TOID(struct rbtree_map) map, TOID(struct tree_map_node) n)
 {
 	/* if left, repair right sibling, otherwise repair left sibling. */
-	while (!TOID_IS_NULL(n) && D_RO(n)->color == COLOR_BLACK)
+	while (!TOID_EQUALS(n, RB_FIRST(map)) && D_RO(n)->color == COLOR_BLACK)
 		n = rbtree_map_repair_branch(map, n, NODE_LOCATION(n));
+
+	TX_SET(n, color, COLOR_BLACK);
 }
 
 /*
@@ -395,8 +409,7 @@ rbtree_map_remove(PMEMobjpool *pop, TOID(struct rbtree_map) map, uint64_t key)
 			D_RO(y)->slots[RB_RIGHT] : D_RO(y)->slots[RB_LEFT];
 
 	TX_BEGIN(pop) {
-		TX_ADD(x);
-		NODE_P(x) = NODE_P(y);
+		TX_SET(x, parent, NODE_P(y));
 		if (TOID_EQUALS(NODE_P(x), r)) {
 			TX_SET(r, slots[RB_LEFT], x);
 		} else {

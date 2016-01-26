@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2014-2015, Intel Corporation
+# Copyright (c) 2014-2016, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -35,6 +35,8 @@
 #
 # Makefile -- build all unit tests
 #
+
+include ../common.inc
 
 TEST_DEPS = \
        unittest\
@@ -96,17 +98,22 @@ OBJ_TESTS = \
        obj_recreate\
        obj_redo_log\
        obj_store\
+       obj_toid\
        obj_tx_alloc\
        obj_tx_add_range\
        obj_tx_add_range_direct\
        obj_tx_flow\
        obj_tx_free\
+       obj_tx_invalid\
        obj_tx_locks\
        obj_tx_locks_abort\
        obj_tx_realloc\
        obj_tx_strdup\
        obj_pool_lookup\
-       obj_first
+       obj_first_next
+
+OBJ_CPP_TESTS = \
+	obj_cpp_ptr\
 
 OTHER_TESTS = \
        arch_flags\
@@ -181,7 +188,6 @@ VMMALLOC_TESTS = \
        vmmalloc_out_of_memory\
        vmmalloc_realloc\
        vmmalloc_valgrind\
-       vmmalloc_valloc
 
 EXAMPLES_TESTS = \
        ex_libpmem\
@@ -189,9 +195,10 @@ EXAMPLES_TESTS = \
        ex_libpmemlog\
        ex_libpmemobj
 
+CPP_EXAMPLE_TESTS = \
+	ex_libpmemobj_cpp
+
 TESTS = \
-       $(TEST_DEPS)\
-       $(OBJ_DEPS)\
        $(OBJ_TESTS)\
        $(BLK_TESTS)\
        $(LOG_TESTS)\
@@ -201,6 +208,16 @@ TESTS = \
        $(VMEM_TESTS)\
        $(VMMALLOC_TESTS)\
        $(EXAMPLES_TESTS)
+
+ifeq ($(call check_cxx_flags, -std=c++11), y)
+TESTS += $(OBJ_CPP_TESTS)
+TESTS += $(CPP_EXAMPLE_TESTS)
+endif
+
+TESTS_BUILD = \
+	$(TESTS)\
+	$(TEST_DEPS)\
+	$(OBJ_DEPS)
 
 all     : TARGET = all
 clean   : TARGET = clean
@@ -215,16 +232,21 @@ TEST_BUILD = all
 TEST_FS = all
 TEST_TIME = 3m
 MEMCHECK = auto
+CHECK_POOL =
 
-all test cstyle: $(TESTS)
+ifeq ($(CHECK_POOL),y)
+CHECK_POOL_OPT="-c"
+endif
 
-clean clobber: $(TESTS)
+all test cstyle: $(TESTS_BUILD)
+
+clean clobber: $(TESTS_BUILD)
 
 $(OBJ_DEPS) $(OBJ_TESTS) $(BLK_TESTS) $(LOG_TESTS) $(OTHER_TESTS) $(PMEM_TESTS) $(PMEMPOOL_TESTS) $(VMEM_TESTS) $(VMMALLOC_TESTS): $(TEST_DEPS)
 
 $(OBJ_TESTS): $(OBJ_DEPS)
 
-$(TESTS):
+$(TESTS_BUILD):
 	$(MAKE) -C $@ $(TARGET)
 
 memcheck-summary:
@@ -237,10 +259,10 @@ memcheck-summary-leaks:
 	grep "in use at exit" */memcheck*.log | grep -v " 0 bytes in 0 blocks" || true
 
 check: test
-	@./RUNTESTS -b $(TEST_BUILD) -t $(TEST_TYPE) -f $(TEST_FS) -o $(TEST_TIME) -m $(MEMCHECK)
+	@./RUNTESTS -b $(TEST_BUILD) -t $(TEST_TYPE) -f $(TEST_FS) -o $(TEST_TIME) -m $(MEMCHECK) $(CHECK_POOL_OPT) $(TESTS)
 	@echo "No failures."
 
-pcheck: $(TESTS)
+pcheck: $(TESTS_BUILD)
 	@echo "No failures."
 
 pcheck_blk: TARGET = pcheck
@@ -277,4 +299,4 @@ pcheck_vmmalloc: $(VMMALLOC_TESTS)
 
 .PHONY: all check clean clobber cstyle pcheck pcheck_blk pcheck_log pcheck_obj\
         pcheck_other pcheck_pmem pcheck_pmempool pcheck_vmem pcheck_vmmalloc\
-        test unittest $(TESTS) $(TEST_DEPS)
+        test unittest $(TESTS_BUILD)

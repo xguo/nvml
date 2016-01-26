@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015, Intel Corporation
+ * Copyright (c) 2014-2016, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -55,6 +55,14 @@
 #define	VERBOSE_SILENT	0
 #define	VERBOSE_DEFAULT	1
 #define	VERBOSE_MAX	2
+
+/*
+ * The MAX_CLASS_STATS variable defines how many allocation classes can be
+ * handled. Because the biggest reasonable run block size is 32 kB the
+ * allocation classes are pretty much capped at 512. Doubled for good measure.
+ */
+#define	MAX_CLASS_STATS\
+	((int)((CHUNKSIZE / RUN_UNIT_MAX / ALLOC_BLOCK_SIZE) * 2))
 
 /*
  * pmempool_info_args -- structure for storing command line arguments
@@ -124,7 +132,7 @@ struct pmem_obj_zone_stats {
 	uint64_t n_chunks_type[MAX_CHUNK_TYPE];
 	uint64_t size_chunks;
 	uint64_t size_chunks_type[MAX_CHUNK_TYPE];
-	struct pmem_obj_class_stats class_stats[MAX_BUCKETS];
+	struct pmem_obj_class_stats class_stats[MAX_CLASS_STATS];
 };
 
 struct pmem_obj_stats {

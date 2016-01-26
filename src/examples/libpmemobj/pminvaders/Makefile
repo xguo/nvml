@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015, Intel Corporation
+# Copyright (c) 2015-2016, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,11 +31,11 @@
 #
 
 #
-# examples/libpmemobj/pminvaders/Makefile -- build the non-tx example
+# examples/libpmemobj/pminvaders/Makefile -- build the pminvaders examples
 #
 NCURSES := $(shell pkg-config ncurses && echo "y" || echo "n")
 ifeq ($(NCURSES),y)
-PROGS = pminvaders
+PROGS = pminvaders pminvaders2
 endif
 
 LIBS = -lpmemobj -lpmem -pthread $(shell pkg-config --libs ncurses)
@@ -43,3 +43,4 @@ LIBS = -lpmemobj -lpmem -pthread $(shell pkg-config --libs ncurses)
 include ../../Makefile.inc
 
 pminvaders: pminvaders.o
+pminvaders2: pminvaders2.o
